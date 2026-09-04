@@ -36,3 +36,6 @@ yarn-error.log*
 # test/verification artifacts
 /verify-*.png
 /coverage
+
+# local embedded-postgres data dir (test harness)
+/pgdata*

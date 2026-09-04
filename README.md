@@ -27,6 +27,10 @@ finds profitable **Prime set vs. individual part** arbitrage opportunities in bo
   and a price-history chart.
 - **Watchlist** with current profit, previous profit and change.
 - **Server-side rate limiting, queueing, backoff and shared caching** — browsers never hit Warframe.market directly.
+- **FREE / PRO accounts** — anonymous visitors keep full dashboard access with **5 free set searches
+  per day** (server-enforced). A **PRO** subscription ($6.99/month via Stripe Checkout) unlocks
+  unlimited searches and the **Capital Calculator**. See [`ACCOUNTS_AND_PRO.md`](ACCOUNTS_AND_PRO.md)
+  for the full auth/quota/billing architecture, setup and deployment checklist.
 
 ---
 
@@ -222,11 +226,13 @@ history chart on each set detail page.
 npm test
 ```
 
-68 unit tests cover single-part sets, multi-part sets, quantities > 1, missing market orders, zero and
+220 tests (unit + integration) cover single-part sets, multi-part sets, quantities > 1, missing market orders, zero and
 negative platinum, malformed orders, positive profit, negative profit, ROI (including divide-by-zero),
 pricing-mode selection, buy-side ordering, confidence scoring, raw-listing/price consistency, and
 Render resilience (database degradation, `$PORT`/`0.0.0.0` binding, deployment config), and
-`DATABASE_URL` fallback resolution.
+`DATABASE_URL` fallback resolution. Integration suites run against a real PostgreSQL and cover
+auth/sessions, the 5/day search quota (including concurrency and cookie-clear bypass attempts),
+Stripe billing/webhooks, and PRO feature gating. See [`ACCOUNTS_AND_PRO.md`](ACCOUNTS_AND_PRO.md) §10.
 
 ---
 

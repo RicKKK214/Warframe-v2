@@ -35,8 +35,17 @@ export function SetDetail({ slug }: { slug: string }) {
     try {
       const r = await fetch(`/api/sets/${slug}${refresh ? '?refresh=true' : ''}`);
       const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      if (!r.ok || !j.ok) {
+        // Daily free-search limit reached → paywall (server already refused).
+        if (r.status === 402 && j.code === 'QUOTA_EXCEEDED') {
+          window.dispatchEvent(new CustomEvent('wf:quota-exceeded', { detail: { error: j.error } }));
+          throw new Error(j.error ?? 'Daily free search limit reached.');
+        }
+        throw new Error(j.error ?? `HTTP ${r.status}`);
+      }
       setData(j.data as Payload);
+      // Keep the header quota indicator in sync with what the server charged.
+      if (j.quota) window.dispatchEvent(new CustomEvent('wf:quota'));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load set');
     } finally { setLoading(false); setBusy(false); }

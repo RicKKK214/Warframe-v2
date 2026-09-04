@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Nav } from '@/components/Nav';
+import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'Warframe Prime Arbitrage Scanner',
@@ -12,8 +13,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen text-slate-200 antialiased">
-        <Nav />
-        <main className="mx-auto max-w-[1600px] px-5 py-6">{children}</main>
+        <AuthProvider>
+          <Nav />
+          <main className="mx-auto max-w-[1600px] px-5 py-6">{children}</main>
+        </AuthProvider>
         <footer className="mx-auto max-w-[1600px] px-5 pb-10 pt-4 text-[11px] leading-relaxed text-slate-600">
           <p>
             Market data courtesy of <a className="text-accent2 hover:underline" href="https://warframe.market"

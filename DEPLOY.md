@@ -115,14 +115,31 @@ depends on a long-lived Node process.
 
 ## After deploying
 
-The watchlist and price history reset on every restart because the filesystem is
-ephemeral — this is expected and documented. If you want them to persist, add a
-free Render Postgres instance and change the `provider` in `prisma/schema.prisma`
-from `sqlite` to `postgresql`, then set `DATABASE_URL` to the Postgres connection
-string. No application code changes are needed; all persistence already routes
-through the `withDb()` helper.
+The watchlist and price history reset on every restart unless a database is
+configured — this is expected and documented. To persist them (and to enable
+accounts/PRO), set `DATABASE_URL` to a Postgres connection string (the
+`provider` in `prisma/schema.prisma` is already `postgresql`). No application
+code changes are needed; all persistence already routes through the
+`withDb()` helper.
 
 Note that free Render Postgres databases expire after 30 days.
+
+---
+
+## Accounts / FREE quota / PRO subscriptions (new)
+
+The deployment above gives you the scanner with anonymous use and the
+**5 free set searches per day** limit. To also enable accounts, email and PRO
+subscriptions, set these in Render → Environment (all optional — the app runs
+FREE-tier-only without them):
+
+- `AUTH_SECRET` — required for stable sessions (`openssl rand -base64 32`).
+- `SMTP_URL`, `MAIL_FROM` — password-reset / verification email.
+- `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` — $6.99/mo PRO
+  subscriptions via Stripe Checkout.
+
+Full setup, Stripe webhook configuration, test↔production switching and a
+deployment checklist: **[`ACCOUNTS_AND_PRO.md`](ACCOUNTS_AND_PRO.md)**.
 
 
 ---

@@ -115,3 +115,115 @@ model CachedAnalysis {
   @@index([fetchedAt])
   @@index([bestRoi])
 }
+
+// ---------------------------------------------------------------------------
+// Accounts, subscriptions and search quota (FREE 5/day vs PRO unlimited).
+//
+// These tables are REQUIRED for accounts/PRO to work — unlike the cache tables
+// above, the app cannot degrade gracefully without them: signup/login return a
+// clear 503 and guests fall back to an in-memory quota when the database is
+// unreachable. Set DATABASE_URL (e.g. free Neon Postgres) in production.
+// ---------------------------------------------------------------------------
+
+/// Application user. Passwords are scrypt hashes (`scrypt$N$r$p$salt$key`) —
+/// plaintext is never stored, and login never logs the password or hash.
+model User {
+  id            String        @id @default(cuid())
+  /// Lowercased, trimmed email. Unique.
+  email         String        @unique
+  passwordHash  String
+  emailVerified Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sessions      Session[]
+  authTokens    AuthToken[]
+  subscription  Subscription?
+}
+
+/// Server-side session. The cookie carries an opaque random token; only its
+/// SHA-256 hash is stored, so a database leak cannot be replayed as a login.
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// One-time tokens for password reset / email verification. Only the SHA-256
+/// hash of the token is stored; tokens are single-use and expire.
+model AuthToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 'password_reset' | 'email_verify'
+  kind      String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, kind])
+}
+
+/// Mirror of the Stripe subscription. PRO status is ALWAYS derived from this
+/// table (written by verified webhooks or a server-side Stripe API sync), never
+/// from anything the browser sends. One subscription row per user.
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?   @unique
+  plan                 String    @default("pro_monthly")
+  /// Stripe subscription status: inactive | incomplete | incomplete_expired
+  /// trialing | active | past_due | canceled | unpaid | paused.
+  status               String    @default("inactive")
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([stripeCustomerId])
+}
+
+/// Daily set-search quota, one row per (scope, day).
+///
+/// scopeType:
+///   'user'  — scopeId is User.id (authenticated, free tier)
+///   'guest' — scopeId is the signed wf_guest cookie id
+///   'ip'    — scopeId is HMAC(pepper, ip[/64 for v6]) so raw IPs are never stored
+///
+/// Anonymous searches are charged to BOTH the guest scope and the ip scope (in
+/// one transaction) and blocked when EITHER is exhausted, so clearing cookies
+/// does not reset the daily limit. Composite PK enables the atomic
+/// INSERT … ON CONFLICT … DO UPDATE … WHERE "count" < $limit RETURNING upsert
+/// that enforces the cap without read-modify-write races.
+model SearchQuota {
+  /// 'user' | 'guest' | 'ip'
+  scopeType String
+  scopeId   String
+  /// Calendar day (YYYY-MM-DD) in QUOTA_TIMEZONE (default UTC).
+  day       String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([scopeType, scopeId, day])
+  @@index([day])
+}
+
+/// Stripe webhook deliveries, keyed by Stripe event id. Recording the event id
+/// and applying its effect in the SAME transaction makes handling idempotent:
+/// duplicate deliveries are detected by the unique PK and skipped.
+model WebhookEvent {
+  id         String   @id
+  type       String
+  receivedAt DateTime @default(now())
+}
