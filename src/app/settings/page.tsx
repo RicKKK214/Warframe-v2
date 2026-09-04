@@ -77,9 +77,16 @@ export default function SettingsPage() {
           <input type="checkbox" checked={s.crossplay} onChange={(e) => setS({ ...s, crossplay: e.target.checked })} />
           Cross-play enabled
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-300">
-          <input type="checkbox" checked={s.onlineOnly} onChange={(e) => setS({ ...s, onlineOnly: e.target.checked })} />
-          Prefer sellers who are currently online / in-game
+        <label className="flex items-start gap-2 text-sm text-slate-300">
+          <input className="mt-1" type="checkbox" checked={s.onlineOnly} onChange={(e) => setS({ ...s, onlineOnly: e.target.checked })} />
+          <span>
+            Only use traders who are online or in-game
+            <span className="block text-[11px] text-slate-500">
+              Offline players are excluded entirely. Their listings often sit stale for weeks
+              and cannot be traded right now, so including them would quote prices you
+              cannot actually get.
+            </span>
+          </span>
         </label>
         {error ? <div className="text-xs text-loss">{error}</div> : null}
         <div className="flex items-center gap-3">

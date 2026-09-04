@@ -311,3 +311,36 @@ describe('sticky filters', () => {
     expect(table).toMatch(/onClick=\{resetStoredFilters\}/);
   });
 });
+
+describe('refresh countdown & part totals', () => {
+  it('tracks the next scheduled scan so the UI can count down', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/lib/services/ScannerService.ts', 'utf8');
+    expect(src).toMatch(/nextRunAt: number \| null/);
+    expect(src).toMatch(/this\.state\.nextRunAt = Date\.now\(\) \+ backoff/);
+  });
+
+  it('clears the countdown while a scan is running', async () => {
+    const fs = await import('node:fs');
+    const route = fs.readFileSync('src/app/api/status/route.ts', 'utf8');
+    // Reporting both "scanning" and a countdown at once makes the header flicker.
+    expect(route).toMatch(/scanner\.state\.running \? null : scanner\.state\.nextRunAt/);
+  });
+
+  it('exposes part totals, counting shared parts once', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/lib/services/ScannerService.ts', 'utf8');
+    expect(src).toMatch(/partTotals\(\)/);
+    expect(src).toMatch(/const unique = new Set<string>\(\)/);
+    expect(src).toMatch(/uniqueParts: unique\.size/);
+  });
+
+  it('renders the countdown as m:ss and ticks every second', async () => {
+    const fs = await import('node:fs');
+    const nav = fs.readFileSync('src/components/Nav.tsx', 'utf8');
+    expect(nav).toMatch(/function mmss/);
+    expect(nav).toMatch(/padStart\(2, '0'\)/);
+    // A 1s local tick is needed because status polling is only every 5s.
+    expect(nav).toMatch(/setInterval\(\(\) => setNow\(Date\.now\(\)\), 1000\)/);
+  });
+});

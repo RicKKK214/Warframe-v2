@@ -56,7 +56,9 @@ export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
   const num = (k: string) => (p.get(k) !== null && p.get(k) !== '' ? Number(p.get(k)) : null);
   const sort = p.get('sort') ?? 'roi';
-  const mode = (p.get('mode') === 'instant' ? 'instant' : 'listing') as 'listing' | 'instant';
+  // Default to the instant flip: it reflects what a trader can actually realise right now
+  // by selling into existing buy orders, rather than a listing price that may never fill.
+  const mode = (p.get('mode') === 'listing' ? 'listing' : 'instant') as 'listing' | 'instant';
 
   try {
     // After a restart (Render free instances spin down) memory is empty and ALL live data

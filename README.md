@@ -262,7 +262,34 @@ Two gotchas worth knowing:
 Because cached data now survives restarts, a cold start is much less painful even without the
 pinger: the site renders immediately from PostgreSQL, then refreshes in the background.
 
+## Only online traders are used
+
+Every price, count and listing comes exclusively from users whose Warframe.market status is
+`ingame` or `online`. Offline players are excluded outright, not merely deprioritised.
+
+This matters more than it sounds. A live check of Wisp Prime returned **1145 valid sell
+orders, of which only 97 were online** — and the cheapest offline listing was **1p** versus
+**68p** online. Quoting that 1p would have invented an enormous profit on a trade nobody can
+actually make, since the seller is not there to accept it.
+
+The rule is applied in one place and used everywhere: pricing (`pricing.ts`), the raw order
+books on the set page, and the Sellers/Buyers columns. If no online trader exists for a side,
+the app reports no price rather than falling back to an unobtainable one.
+
+Turn it off in **Settings → "Only use traders who are online or in-game"** to price against
+the whole book instead.
+
 ## Filters
+
+### Instant flip is the default view
+
+The dashboard, the set detail page and the watchlist all lead with the **instant flip** —
+what you get by selling straight into existing buy orders right now. The listing figures
+(posting your own sell order and waiting for a buyer) are still shown, but second, under
+"If you list and wait", because they are the optimistic case and depend on someone
+eventually buying.
+
+Switch to the listing view any time with the **Listing flip** toggle; the choice is saved.
 
 ### Instant-flip filters
 
@@ -274,7 +301,24 @@ waiting for a listing to fill.
 
 Sorting by `instantProfit` / `instantRoi` is available too.
 
-### Filters are remembered
+### Only online traders are used
+
+Every price, count and listing comes exclusively from users whose Warframe.market status is
+`ingame` or `online`. Offline players are excluded outright, not merely deprioritised.
+
+This matters more than it sounds. A live check of Wisp Prime returned **1145 valid sell
+orders, of which only 97 were online** — and the cheapest offline listing was **1p** versus
+**68p** online. Quoting that 1p would have invented an enormous profit on a trade nobody can
+actually make, since the seller is not there to accept it.
+
+The rule is applied in one place and used everywhere: pricing (`pricing.ts`), the raw order
+books on the set page, and the Sellers/Buyers columns. If no online trader exists for a side,
+the app reports no price rather than falling back to an unobtainable one.
+
+Turn it off in **Settings → "Only use traders who are online or in-game"** to price against
+the whole book instead.
+
+## Filters are remembered
 
 Filter choices persist in `localStorage` (key `wfarb.filters.v1`), so they survive a reload,
 navigating away, or closing the tab entirely — they only change when you change them or press

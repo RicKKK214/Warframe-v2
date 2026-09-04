@@ -23,14 +23,18 @@ interface Filters {
 }
 
 const DEFAULTS: Filters = {
-  sort: 'roi', mode: 'listing', q: '', type: 'all', strategy: 'all',
+  sort: 'roi', mode: 'instant', q: '', type: 'all', strategy: 'all',
   minProfit: '', minRoi: '', maxInvestment: '', minSellers: '', minBuyers: '',
   minInstantProfit: '', minInstantRoi: '',
   excludeLowLiquidity: false,
 };
 
-/** Bumped when the Filters shape changes, so old saved values can't linger. */
-const FILTERS_STORAGE_KEY = 'wfarb.filters.v1';
+/**
+ * Bumped when the Filters shape or defaults change, so old saved values can't linger.
+ * v2: default display mode changed from 'listing' to 'instant'. Without the bump, anyone
+ * who had already used the site would keep seeing listing prices from their saved filters.
+ */
+const FILTERS_STORAGE_KEY = 'wfarb.filters.v2';
 
 export function OpportunityTable({ compact = false, title = 'Top Arbitrage Opportunities' }: {
   compact?: boolean; title?: string;

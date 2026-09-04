@@ -175,13 +175,23 @@ export function SetDetail({ slug }: { slug: string }) {
                 </span>
               ) : null}
             </div>
+            {/* Instant flip leads: it is what a trader can actually realise right now by
+                selling into existing buy orders. The listing figures are the optimistic
+                case and depend on someone eventually buying, so they come second. */}
             <div className="mt-4 grid grid-cols-2 gap-4">
               <Stat label="Investment" value={plat(s.investment)} />
-              <Stat label="Listing revenue" value={plat(s.listingRevenue)} />
-              <Stat label="Listing profit" value={<Money value={s.listingProfit} signed />} />
-              <Stat label="Listing ROI" value={<Roi value={s.listingRoi} />} />
               <Stat label="Instant revenue" value={plat(s.instantRevenue)} sub="sell into buy orders" />
-              <Stat label="Instant profit" value={<Money value={s.instantProfit} signed />} sub={<Roi value={s.instantRoi} />} />
+              <Stat label="Instant profit" value={<Money value={s.instantProfit} signed />} />
+              <Stat label="Instant ROI" value={<Roi value={s.instantRoi} />} />
+            </div>
+            <div className="mt-4 border-t border-slate-800 pt-3">
+              <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">
+                If you list and wait
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Stat label="Listing revenue" value={plat(s.listingRevenue)} />
+                <Stat label="Listing profit" value={<Money value={s.listingProfit} signed />} sub={<Roi value={s.listingRoi} />} />
+              </div>
             </div>
           </Card>
         ))}

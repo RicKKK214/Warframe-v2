@@ -17,12 +17,29 @@ interface Status {
   lastRefreshAt: number | null;
   scan: { running: boolean; processed: number; total: number };
   scannedSets: number;
+  nextRunAt: number | null;
+  refreshSeconds: number;
+  parts: { totalParts: number; uniqueParts: number; sets: number };
+}
+
+/** mm:ss for a countdown. */
+function mmss(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 export function Nav() {
   const pathname = usePathname();
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
+  // Ticks every second so the countdown moves smoothly between the 5s status polls,
+  // rather than jumping in 5-second steps.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const load = async () => {
     try {
@@ -80,11 +97,31 @@ export function Nav() {
 
         <div className="ml-auto flex items-center gap-3">
           <div className="text-right text-[11px] leading-tight text-slate-500">
-            <div>Last market refresh: <span className="text-slate-300">{ago(status?.lastRefreshAt ?? null)}</span></div>
             <div>
-              {status?.scan.running
-                ? `Scanning ${status.scan.processed}/${status.scan.total}…`
-                : `${status?.scannedSets ?? 0} sets cached`}
+              Last market refresh: <span className="text-slate-300">{ago(status?.lastRefreshAt ?? null)}</span>
+              {!status?.scan.running && status?.nextRunAt ? (
+                <>
+                  {' · next in '}
+                  <span className="font-mono text-accent2">
+                    {mmss((status.nextRunAt - now) / 1000)}
+                  </span>
+                </>
+              ) : null}
+            </div>
+            <div>
+              {status?.scan.running ? (
+                <span className="text-accent2">
+                  Scanning {status.scan.processed}/{status.scan.total}…
+                </span>
+              ) : (
+                <>
+                  {status?.scannedSets ?? 0} sets
+                  {status?.parts?.totalParts
+                    ? ` · ${status.parts.totalParts} parts (${status.parts.uniqueParts} unique)`
+                    : ''}
+                  {' cached'}
+                </>
+              )}
             </div>
           </div>
           <button onClick={refresh} disabled={busy} className="btn-accent">

@@ -49,7 +49,11 @@ export function computePrice(
 ): PriceStat {
   const valid = (orders ?? []).filter((o) => o.type === side && isValidOrder(o, ctx));
   const online = valid.filter(isOnline);
-  const pool = ctx.onlineOnly !== false && online.length >= 2 ? online : valid;
+  // When onlineOnly is set, use ONLY online traders - never silently fall back to offline
+  // ones. An offline seller's price is not obtainable: you cannot trade with them now, so
+  // quoting their listing would overstate what is actually achievable. If that leaves no
+  // orders, the correct answer is "no price", not a price you can't get.
+  const pool = ctx.onlineOnly !== false ? online : valid;
   const sorted = [...pool].sort((a, b) =>
     side === 'sell' ? a.platinum - b.platinum : b.platinum - a.platinum,
   );
@@ -84,8 +88,11 @@ export function computePrice(
   }
   return {
     price: price === null ? null : Math.round(price * 100) / 100,
-    count: valid.length,
+    // Report the size of the pool actually used for pricing, so the Sellers/Buyers column
+    // matches the quoted price instead of counting traders who are offline.
+    count: pool.length,
     onlineCount: online.length,
+    totalCount: valid.length,
     cheapest,
     spread1to5,
   };

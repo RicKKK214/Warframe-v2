@@ -53,7 +53,8 @@ export class MarketOrderService {
     const pick = (orders: WfmOrder[], side: 'sell' | 'buy') => {
       const valid = orders.filter((o) => isValidOrder(o, ctx));
       const online = valid.filter(isOnline);
-      const pool = ctx.onlineOnly !== false && online.length >= 2 ? online : valid;
+      // Same rule as the pricing engine: online-only means online-only.
+      const pool = ctx.onlineOnly !== false ? online : valid;
       return [...pool].sort((a, b) => (side === 'sell' ? a.platinum - b.platinum : b.platinum - a.platinum));
     };
 

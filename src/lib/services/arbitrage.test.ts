@@ -222,3 +222,75 @@ describe('raw listing panel consistency (regression)', () => {
     expect(onlinePool.some((o) => o.id === 'stale')).toBe(false);
   });
 });
+
+describe('online-only trader filtering', () => {
+  const mk = (type: 'sell' | 'buy', platinum: number, status: string) => ({
+    id: `${type}-${platinum}-${status}`,
+    type,
+    platinum,
+    quantity: 1,
+    visible: true,
+    user: { ingameName: 'x', status, platform: 'pc', crossplay: true },
+  }) as unknown as WfmOrder;
+
+  it('ignores offline sellers even when they are cheaper', () => {
+    const orders = [
+      mk('sell', 1, 'offline'),   // ghost listing - not actually buyable
+      mk('sell', 68, 'ingame'),
+      mk('sell', 70, 'online'),
+    ];
+    const s = computePrice(orders, 'sell', 'lowest', { onlineOnly: true });
+    expect(s.price).toBe(68);
+  });
+
+  it('ignores offline buyers even when they bid higher', () => {
+    const orders = [
+      mk('buy', 200, 'offline'),
+      mk('buy', 62, 'ingame'),
+    ];
+    const b = computePrice(orders, 'buy', 'lowest', { onlineOnly: true });
+    expect(b.price).toBe(62);
+  });
+
+  it('does NOT fall back to offline traders when only one is online', () => {
+    // Regression: the pool used to fall back to all valid orders unless >= 2 were online,
+    // silently quoting prices from traders you cannot actually trade with.
+    const orders = [mk('sell', 1, 'offline'), mk('sell', 50, 'ingame')];
+    const s = computePrice(orders, 'sell', 'lowest', { onlineOnly: true });
+    expect(s.price).toBe(50);
+    expect(s.count).toBe(1);
+  });
+
+  it('reports no price when every trader is offline', () => {
+    const orders = [mk('sell', 10, 'offline'), mk('sell', 12, 'offline')];
+    const s = computePrice(orders, 'sell', 'lowest', { onlineOnly: true });
+    expect(s.price).toBeNull();
+    expect(s.count).toBe(0);
+  });
+
+  it('counts only online traders, not the whole book', () => {
+    const orders = [
+      mk('sell', 10, 'offline'), mk('sell', 11, 'offline'), mk('sell', 12, 'offline'),
+      mk('sell', 20, 'ingame'), mk('sell', 21, 'online'),
+    ];
+    const s = computePrice(orders, 'sell', 'median3', { onlineOnly: true });
+    expect(s.count).toBe(2);        // shown in the Sellers column
+    expect(s.totalCount).toBe(5);   // full book, for reference
+  });
+
+  it('includes offline traders when onlineOnly is explicitly disabled', () => {
+    const orders = [mk('sell', 1, 'offline'), mk('sell', 68, 'ingame')];
+    const s = computePrice(orders, 'sell', 'lowest', { onlineOnly: false });
+    expect(s.price).toBe(1);
+    expect(s.count).toBe(2);
+  });
+
+  it("treats 'ingame' and 'online' as online, everything else as offline", () => {
+    const orders = [
+      mk('sell', 5, 'ingame'), mk('sell', 6, 'online'),
+      mk('sell', 7, 'offline'), mk('sell', 8, 'invisible'),
+    ];
+    const s = computePrice(orders, 'sell', 'lowest', { onlineOnly: true });
+    expect(s.count).toBe(2);
+  });
+});

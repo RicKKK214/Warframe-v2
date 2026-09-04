@@ -49,6 +49,8 @@ export interface PriceStat {
   price: number | null;
   count: number;
   onlineCount: number;
+  /** Valid orders regardless of online status; used to show how many were excluded. */
+  totalCount: number;
   cheapest: number[];
   spread1to5: number | null;
 }

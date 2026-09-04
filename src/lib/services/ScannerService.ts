@@ -23,6 +23,8 @@ export interface ScanState {
   bootedAt: number;
   /** How many sets were restored from the database at boot. */
   hydratedFromCache: number;
+  /** Epoch ms of the next scheduled scan, so the UI can count down to it. */
+  nextRunAt: number | null;
 }
 
 interface ScannerGlobal {
@@ -35,6 +37,7 @@ export class ScannerService {
     running: false, startedAt: null, finishedAt: null,
     processed: 0, total: 0, errors: 0, lastError: null,
     warm: false, consecutiveFailures: 0, bootedAt: Date.now(), hydratedFromCache: 0,
+    nextRunAt: null,
   };
   private hydrated = false;
   /** Cap in-memory results so a long-lived instance cannot grow unbounded (512MB tier). */
@@ -170,13 +173,14 @@ export class ScannerService {
       'watchlistLookup',
     );
     if (w) {
-      const profit = a.bestStrategy?.listingProfit ?? null;
+      // Track the instant-flip figure so the watchlist matches what the dashboard shows.
+      const profit = a.bestStrategy?.instantProfit ?? null;
       await withDb(() => prisma.watchlist.update({
         where: { setSlug: a.slug },
         data: {
           prevProfit: w.lastProfit,
           lastProfit: profit,
-          lastRoi: a.bestStrategy?.listingRoi ?? null,
+          lastRoi: a.bestStrategy?.instantRoi ?? null,
           strategy: a.bestStrategy?.strategy ?? null,
           setName: a.name,
         },
@@ -191,6 +195,7 @@ export class ScannerService {
       ...this.state,
       running: true, startedAt: Date.now(), finishedAt: null,
       processed: 0, total: 0, errors: 0, lastError: null,
+      nextRunAt: null,
     };
     try {
       const sets: CatalogEntry[] = await itemCatalog.getPrimeSets();
@@ -271,6 +276,20 @@ export class ScannerService {
     return loaded;
   }
 
+  /**
+   * Totals across every scanned set: how many distinct Prime parts are tracked, and how
+   * many unique part items that represents (a part shared by two sets counts once).
+   */
+  partTotals(): { totalParts: number; uniqueParts: number; sets: number } {
+    let totalParts = 0;
+    const unique = new Set<string>();
+    for (const a of this.results.values()) {
+      totalParts += a.partCount;
+      for (const p of a.parts) unique.add(p.slug);
+    }
+    return { totalParts, uniqueParts: unique.size, sets: this.results.size };
+  }
+
   /** Age of the freshest cached entry, for the UI to show honestly. */
   oldestResultAt(): number | null {
     let oldest: number | null = null;
@@ -321,6 +340,7 @@ export class ScannerService {
           const backoff = this.state.consecutiveFailures > 0
             ? Math.min(10 * 60 * 1000, base * 2 ** Math.min(5, this.state.consecutiveFailures))
             : base;
+          this.state.nextRunAt = Date.now() + backoff;
           this.timer = setTimeout(tick, backoff);
         }
       }
@@ -328,7 +348,9 @@ export class ScannerService {
 
     // Delay the very first pass slightly so the HTTP server binds $PORT immediately —
     // Render marks a deploy live only once the port is listening.
-    this.timer = setTimeout(tick, Number(process.env.SCANNER_BOOT_DELAY_MS ?? 2500));
+    const bootDelay = Number(process.env.SCANNER_BOOT_DELAY_MS ?? 2500);
+    this.state.nextRunAt = Date.now() + bootDelay;
+    this.timer = setTimeout(tick, bootDelay);
   }
 
   private stopped = false;
