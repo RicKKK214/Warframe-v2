@@ -1,0 +1,49 @@
+# Keeps the Render free web service awake by pinging it on a schedule.
+#
+# WHY THIS EXISTS
+#   Render spins a free web service down after 15 minutes of inactivity. Waking it costs
+#   ~50 seconds, so the first visitor after a quiet spell sees a very slow page.
+#
+# READ THIS BEFORE CHANGING THE SCHEDULE
+#   Render grants 750 free instance hours per MONTH, per workspace - shared by every free
+#   service you run. A month is 720-744 hours, so keeping one service awake 24/7 consumes
+#   essentially your entire allowance, and running out SUSPENDS all free services until the
+#   next month.
+#
+#   The schedule below pings every 14 minutes between 06:00-22:00 UTC only:
+#       16 hours/day x 31 days = ~496 hours/month  -> comfortably under 750
+#   Outside those hours the service sleeps, which is what keeps you inside the quota.
+#
+#   Going 24/7 (*/14 * * * *) would use ~744 hours and leave no margin for a second service
+#   or a redeploy. Only do that if this is the sole free service in the workspace.
+name: Keep Render service awake
+
+on:
+  schedule:
+    # Every 14 minutes (Render's idle timeout is 15) during active hours, UTC.
+    - cron: '*/14 6-21 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the service
+        env:
+          # Set this to your service URL, e.g. https://your-app.onrender.com
+          # Repo -> Settings -> Secrets and variables -> Actions -> Variables -> New variable
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL repository variable is not set - skipping."
+            exit 0
+          fi
+          # Retry: a cold start can exceed the first request's timeout.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 "$APP_URL/api/ping" || echo 000)
+            echo "attempt $attempt -> HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 15
+          done
+          echo "Service did not respond with 200 after 3 attempts."
+          exit 1

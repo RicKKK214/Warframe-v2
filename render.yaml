@@ -1,0 +1,60 @@
+# Render Blueprint — free tier deployment
+# Docs: https://render.com/docs/blueprint-spec
+#
+# NOTE ON THE FREE TIER
+#   * The filesystem is EPHEMERAL. Set DATABASE_URL to an external PostgreSQL database
+#     (free: https://neon.tech) so scanned market data survives restarts. Without it the
+#     app re-scans ~160 sets from scratch on every wake-up.
+#   * Free instances SPIN DOWN after ~15 minutes of inactivity. The next request triggers
+#     a cold start (~50s). Cached data is restored from PostgreSQL immediately on wake,
+#     so the site shows results at once instead of an empty table.
+#     To reduce cold starts, see .github/workflows/keep-alive.yml — but note that keeping
+#     a service awake 24/7 consumes nearly all 750 free instance hours/month.
+#   * No persistent disk and no cron jobs are used, so this stays entirely within free limits.
+
+services:
+  - type: web
+    name: warframe-prime-arbitrage-scanner
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npm run start:render
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # REQUIRED. Paste your Neon PostgreSQL connection string in the Render dashboard.
+      # sync:false keeps the credential out of source control.
+      - key: DATABASE_URL
+        sync: false
+      # How long cached results remain usable after a restart (hours).
+      - key: CACHE_MAX_AGE_HOURS
+        value: "144"
+      - key: WFM_API_BASE
+        value: https://api.warframe.market/v2
+      - key: WFM_PLATFORM
+        value: pc
+      - key: WFM_CROSSPLAY
+        value: "true"
+      - key: WFM_LANGUAGE
+        value: en
+      # Be polite to Warframe.market's public API.
+      - key: WFM_RATE_LIMIT_RPS
+        value: "3"
+      # Slower refresh on free tier to conserve CPU/memory.
+      - key: REFRESH_INTERVAL_SECONDS
+        value: "180"
+      # Small first pass so a cold start becomes useful quickly.
+      - key: SCANNER_WARMUP_LIMIT
+        value: "12"
+      - key: SCANNER_BATCH_LIMIT
+        value: "16"
+      # Bound in-memory results for the 512MB free instance.
+      - key: SCANNER_MAX_RESULTS
+        value: "300"
+      # Keep Next.js memory footprint modest.
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=460

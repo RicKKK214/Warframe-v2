@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(139, 92, 246, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, rgba(56, 189, 248, 0.07), transparent 55%),
+    #05060a;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0b0e15; }
+::-webkit-scrollbar-thumb { background: #262e42; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #39435c; }
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-edge bg-panel/80 backdrop-blur-sm;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm
+           text-slate-200 transition hover:border-accent/60 hover:text-white disabled:opacity-40;
+  }
+  .btn-accent {
+    @apply inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white
+           transition hover:bg-accent2 disabled:opacity-40;
+  }
+  .input {
+    @apply w-full rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm text-slate-100
+           placeholder:text-slate-500 outline-none focus:border-accent/70;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-edge bg-panel2 px-2 py-0.5 text-[11px] text-slate-300;
+  }
+  .th { @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400; }
+  .td { @apply px-3 py-2 text-sm text-slate-200; }
+}
