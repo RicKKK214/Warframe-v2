@@ -79,6 +79,10 @@ export async function GET(req: Request) {
 
     const minProfit = num('minProfit');
     const minRoi = num('minRoi');
+    // Instant-flip filters are independent of the display mode: a trader can browse in
+    // Listing mode while still requiring the row to be profitable on an immediate dump.
+    const minInstantProfit = num('minInstantProfit');
+    const minInstantRoi = num('minInstantRoi');
     const maxInvestment = num('maxInvestment');
     const minSellers = num('minSellers');
     const minBuyers = num('minBuyers');
@@ -91,6 +95,10 @@ export async function GET(req: Request) {
     if (onlyProfitable) rows = rows.filter((r) => (r.profit ?? 0) > 0);
     if (minProfit !== null) rows = rows.filter((r) => (r.profit ?? 0) >= minProfit);
     if (minRoi !== null) rows = rows.filter((r) => (r.roi ?? 0) >= minRoi);
+    if (minInstantProfit !== null) {
+      rows = rows.filter((r) => (r.instantProfit ?? 0) >= minInstantProfit);
+    }
+    if (minInstantRoi !== null) rows = rows.filter((r) => (r.instantRoi ?? 0) >= minInstantRoi);
     if (maxInvestment !== null) rows = rows.filter((r) => (r.investment ?? Infinity) <= maxInvestment);
     if (minSellers !== null) rows = rows.filter((r) => r.sellers >= minSellers);
     if (minBuyers !== null) rows = rows.filter((r) => r.buyers >= minBuyers);
@@ -101,6 +109,8 @@ export async function GET(req: Request) {
     if (excludeLowLiquidity) rows = rows.filter((r) => r.confidence >= 55 && r.sellers >= 3 && r.buyers >= 1);
 
     const cmp: Record<string, (a: OpportunityRow, b: OpportunityRow) => number> = {
+      instantProfit: (a, b) => (b.instantProfit ?? -Infinity) - (a.instantProfit ?? -Infinity),
+      instantRoi: (a, b) => (b.instantRoi ?? -Infinity) - (a.instantRoi ?? -Infinity),
       roi: (a, b) => (b.roi ?? 0) - (a.roi ?? 0),
       profit: (a, b) => (b.profit ?? 0) - (a.profit ?? 0),
       investment: (a, b) => (a.investment ?? Infinity) - (b.investment ?? Infinity),

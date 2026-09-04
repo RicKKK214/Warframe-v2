@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowUpDown, Search, SlidersHorizontal, Zap, Tag } from 'lucide-react';
+import { useStickyState } from '@/lib/useStickyState';
+import { ArrowUpDown, Search, SlidersHorizontal, Zap, Tag, Save } from 'lucide-react';
 import { Money, Roi, ConfidenceBadge, StrategyTag, Spinner, EmptyState, ErrorState, Disclaimer } from './ui';
 import { ago, CATEGORY_LABEL, plat } from '@/lib/utils';
 
@@ -17,19 +18,27 @@ export interface Row {
 interface Filters {
   sort: string; mode: 'listing' | 'instant'; q: string; type: string; strategy: string;
   minProfit: string; minRoi: string; maxInvestment: string; minSellers: string; minBuyers: string;
+  minInstantProfit: string; minInstantRoi: string;
   excludeLowLiquidity: boolean;
 }
 
 const DEFAULTS: Filters = {
   sort: 'roi', mode: 'listing', q: '', type: 'all', strategy: 'all',
   minProfit: '', minRoi: '', maxInvestment: '', minSellers: '', minBuyers: '',
+  minInstantProfit: '', minInstantRoi: '',
   excludeLowLiquidity: false,
 };
+
+/** Bumped when the Filters shape changes, so old saved values can't linger. */
+const FILTERS_STORAGE_KEY = 'wfarb.filters.v1';
 
 export function OpportunityTable({ compact = false, title = 'Top Arbitrage Opportunities' }: {
   compact?: boolean; title?: string;
 }) {
-  const [filters, setFilters] = useState<Filters>(DEFAULTS);
+  // Persisted: a user's filters stay put across reloads and closing the tab, and only
+  // change when they change them.
+  const [filters, setFilters, { ready: filtersReady, reset: resetStoredFilters }] =
+    useStickyState<Filters>(FILTERS_STORAGE_KEY, DEFAULTS);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +54,10 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
     if (filters.q) p.set('q', filters.q);
     if (filters.type !== 'all') p.set('type', filters.type);
     if (filters.strategy !== 'all') p.set('strategy', filters.strategy);
-    for (const k of ['minProfit', 'minRoi', 'maxInvestment', 'minSellers', 'minBuyers'] as const) {
+    for (const k of [
+      'minProfit', 'minRoi', 'maxInvestment', 'minSellers', 'minBuyers',
+      'minInstantProfit', 'minInstantRoi',
+    ] as const) {
       if (filters[k] !== '') p.set(k, filters[k]);
     }
     if (filters.excludeLowLiquidity) p.set('excludeLowLiquidity', 'true');
@@ -70,20 +82,34 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
   }, [query]);
 
   useEffect(() => {
+    // Wait for saved filters to load, otherwise the first fetch would use the defaults
+    // and briefly show results the user did not ask for.
+    if (!filtersReady) return;
     const c = new AbortController();
     setLoading(true);
     const t = setTimeout(() => void load(c.signal), 250);
     return () => { c.abort(); clearTimeout(t); };
-  }, [load]);
+  }, [load, filtersReady]);
 
   useEffect(() => {
+    if (!filtersReady) return;
     const h = () => void load();
     window.addEventListener('wf:refreshed', h);
     const poll = setInterval(() => void load(), 30000);
     return () => { window.removeEventListener('wf:refreshed', h); clearInterval(poll); };
-  }, [load]);
+  }, [load, filtersReady]);
 
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }));
+
+  // How many filters differ from the defaults — drives the "saved" hint and the badge
+  // on the Filters button, so persisted values are never silently in effect.
+  const activeFilterCount = useMemo(
+    () =>
+      (Object.keys(DEFAULTS) as Array<keyof Filters>).filter(
+        (k) => k !== 'sort' && k !== 'mode' && filters[k] !== DEFAULTS[k],
+      ).length,
+    [filters],
+  );
   const shown = compact ? rows.slice(0, 10) : rows;
 
   return (
@@ -106,6 +132,13 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
           </div>
           <button className="btn" onClick={() => setShowFilters((s) => !s)}>
             <SlidersHorizontal size={14} /> Filters
+            {/* Saved filters persist across visits, so show a count even when the
+                panel is collapsed - otherwise results look wrong for no visible reason. */}
+            {activeFilterCount > 0 ? (
+              <span className="rounded bg-accent/25 px-1.5 py-0.5 text-[10px] font-medium text-accent2">
+                {activeFilterCount}
+              </span>
+            ) : null}
           </button>
         </div>
       </div>
@@ -117,11 +150,13 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
       </div>
 
       {showFilters ? (
-        <div className="card grid grid-cols-2 gap-3 p-4 md:grid-cols-4 xl:grid-cols-7">
+        <div className="card grid grid-cols-2 gap-3 p-4 md:grid-cols-4 xl:grid-cols-5">
           <label className="space-y-1 text-[11px] uppercase tracking-wider text-slate-400">Sort by
             <select className="input" value={filters.sort} onChange={(e) => set('sort', e.target.value)}>
               <option value="roi">Highest ROI</option>
               <option value="profit">Highest platinum profit</option>
+              <option value="instantProfit">Highest instant profit</option>
+              <option value="instantRoi">Highest instant ROI</option>
               <option value="investment">Lowest investment</option>
               <option value="liquidity">Highest liquidity</option>
               <option value="confidence">Confidence</option>
@@ -148,6 +183,26 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
           <label className="space-y-1 text-[11px] uppercase tracking-wider text-slate-400">Min ROI (%)
             <input className="input" type="number" min="0" value={filters.minRoi} onChange={(e) => set('minRoi', e.target.value)} />
           </label>
+          <label
+            className="space-y-1 text-[11px] uppercase tracking-wider text-slate-400"
+            title="Profit when dumping straight into existing buy orders — a guaranteed-speed sale, usually lower than the listing price."
+          >
+            <span className="flex items-center gap-1">
+              <Zap size={11} className="text-amber-400" /> Min instant profit (p)
+            </span>
+            <input className="input" type="number" value={filters.minInstantProfit}
+              onChange={(e) => set('minInstantProfit', e.target.value)} placeholder="e.g. 10" />
+          </label>
+          <label
+            className="space-y-1 text-[11px] uppercase tracking-wider text-slate-400"
+            title="ROI on an instant flip, independent of the Listing/Instant display toggle."
+          >
+            <span className="flex items-center gap-1">
+              <Zap size={11} className="text-amber-400" /> Min instant ROI (%)
+            </span>
+            <input className="input" type="number" value={filters.minInstantRoi}
+              onChange={(e) => set('minInstantRoi', e.target.value)} placeholder="e.g. 15" />
+          </label>
           <label className="space-y-1 text-[11px] uppercase tracking-wider text-slate-400">Max investment (p)
             <input className="input" type="number" min="0" value={filters.maxInvestment} onChange={(e) => set('maxInvestment', e.target.value)} />
           </label>
@@ -164,7 +219,15 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
               onChange={(e) => set('excludeLowLiquidity', e.target.checked)} />
             Exclude low-liquidity opportunities
           </label>
-          <button className="btn" onClick={() => setFilters(DEFAULTS)}>Reset filters</button>
+          <div className="col-span-2 flex flex-wrap items-center gap-3">
+            <button className="btn" onClick={resetStoredFilters}>Reset filters</button>
+            {activeFilterCount > 0 ? (
+              <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                <Save size={11} />
+                {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active — saved on this device
+              </span>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

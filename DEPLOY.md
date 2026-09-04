@@ -129,16 +129,22 @@ Note that free Render Postgres databases expire after 30 days.
 
 ## Persistent data + keeping the app awake
 
-### 1. Free PostgreSQL (required)
+### 1. Free PostgreSQL (optional but recommended)
 
-Scanned market data is cached in PostgreSQL so it survives restarts. Render's disk is wiped on
-every spin-down, so use an external database:
+**DATABASE_URL is optional — the app deploys and runs without it.** The database is only a
+*cache* of scanned market data; without it the app still scans live Warframe.market data, it
+just re-scans from scratch after each restart instead of restoring instantly.
+
+To make scanned data persist across restarts:
 
 1. Sign up at <https://neon.tech> — free forever, no credit card, 0.5 GB.
 2. Create a project and copy the **pooled** connection string.
 3. In Render: your service → **Environment** → add `DATABASE_URL` with that value.
 
 Do **not** use Render's own free Postgres: it is deleted 30 days after creation.
+
+If you see `persistence: {ok: false, configured: false}` at `/api/health`, the app is running
+without a cache — that is a valid state, not an error.
 
 Optionally set `CACHE_MAX_AGE_HOURS` (default `144`, i.e. 6 days) to control how long cached
 results stay usable before being treated as stale.

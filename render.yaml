@@ -26,10 +26,13 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # REQUIRED. Paste your Neon PostgreSQL connection string in the Render dashboard.
-      # sync:false keeps the credential out of source control.
-      - key: DATABASE_URL
-        sync: false
+      # OPTIONAL. The app runs fine without this - the database is only a CACHE of
+      # scanned market data. Without it every restart re-scans from Warframe.market.
+      #
+      # To make scanned data persist: create a free database at https://neon.tech,
+      # then add DATABASE_URL in the Render dashboard (Environment tab) with the
+      # pooled connection string. Deliberately NOT declared here: listing it with
+      # sync:false makes Render block the deploy until a value is supplied.
       # How long cached results remain usable after a restart (hours).
       - key: CACHE_MAX_AGE_HOURS
         value: "144"

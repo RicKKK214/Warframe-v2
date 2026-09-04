@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { scanner } from '@/lib/services/ScannerService';
 import { probeDb } from '@/lib/db';
+import { persistenceConfigured } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,11 @@ export async function GET() {
       oldestDataAt: scanner.oldestResultAt(),
     },
     // Persistence is optional; false here does not make the service unhealthy.
-    persistence,
+    persistence: {
+      ...persistence,
+      // Distinguish "no database configured" from "database configured but broken".
+      configured: persistenceConfigured(),
+    },
     memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
   });
 }

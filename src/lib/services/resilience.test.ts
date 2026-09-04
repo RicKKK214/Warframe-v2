@@ -77,15 +77,17 @@ describe('PORT / host binding configuration', () => {
   it('render start script tolerates a failed schema push', async () => {
     const fs = await import('node:fs');
     const sh = fs.readFileSync('scripts/start-render.sh', 'utf8');
-    expect(sh).toMatch(/continuing without persistence/);
+    expect(sh).toMatch(/Continuing without persistence/i);
   });
 
-  it('render.yaml requires an external database and configures a health check', async () => {
+  it('render.yaml does not force DATABASE_URL and configures a health check', async () => {
     const fs = await import('node:fs');
     const y = fs.readFileSync('render.yaml', 'utf8');
     // Cached market data must live in an external DB, not on Render's ephemeral disk.
     expect(y).not.toContain('file:/tmp/dev.db');
-    expect(y).toContain('DATABASE_URL');
+    // Declaring DATABASE_URL with sync:false makes Render block the deploy until a
+    // value is entered; the app does not need one, so it must not be declared.
+    expect(y).not.toMatch(/- key: DATABASE_URL/);
     expect(y).toContain('healthCheckPath: /api/health');
     expect(y).toContain('plan: free');
   });
@@ -119,9 +121,12 @@ describe('DATABASE_URL resolution (regression)', () => {
     else process.env.DATABASE_URL = prev;
   });
 
-  it('refuses to default DATABASE_URL in production', async () => {
+  it('uses an unreachable placeholder in production rather than failing', async () => {
     const env = await import('../env');
-    expect(() => env.defaultDatabaseUrl('production')).toThrow(/DATABASE_URL is not set/);
+    // The DB is only a cache: a missing URL must never stop the app booting.
+    const url = env.defaultDatabaseUrl('production');
+    expect(url).toMatch(/^postgresql:\/\//);
+    expect(url).toContain('unset');
   });
 
   it('uses a local Postgres database outside production', async () => {
@@ -129,10 +134,13 @@ describe('DATABASE_URL resolution (regression)', () => {
     expect(env.defaultDatabaseUrl('development')).toMatch(/^postgresql:\/\//);
   });
 
-  it('start script fails loudly when DATABASE_URL is missing', async () => {
+  it('start script continues without DATABASE_URL instead of exiting', async () => {
     const fs = await import('node:fs');
     const sh = fs.readFileSync('scripts/start-render.sh', 'utf8');
-    expect(sh).toMatch(/FATAL: DATABASE_URL is not set/);
+    // Regression: this used to `exit 1`, which broke deploys on hosts with no database.
+    expect(sh).not.toMatch(/FATAL: DATABASE_URL/);
+    expect(sh).not.toMatch(/exit 1/);
+    expect(sh).toMatch(/WITHOUT a persistent cache/);
     expect(sh).toMatch(/export DATABASE_URL/);
   });
 
@@ -165,10 +173,13 @@ describe('cached market data (survives restarts)', () => {
     expect(schema).toMatch(/fetchedAt\s+DateTime/);
   });
 
-  it('refuses to start in production without DATABASE_URL', async () => {
+  it('still starts in production without DATABASE_URL', async () => {
     const env = await import('../env');
     // Defaulting to a file on Render's ephemeral disk would discard the cache every restart.
-    expect(() => env.defaultDatabaseUrl('production')).toThrow(/DATABASE_URL is not set/);
+    // The DB is only a cache: a missing URL must never stop the app booting.
+    const url = env.defaultDatabaseUrl('production');
+    expect(url).toMatch(/^postgresql:\/\//);
+    expect(url).toContain('unset');
   });
 
   it('hydrates on boot, before any background scan starts', async () => {
@@ -227,5 +238,76 @@ describe('keep-alive (Render spin-down)', () => {
     const fs = await import('node:fs');
     const src = fs.readFileSync('src/app/api/ping/route.ts', 'utf8');
     expect(src).toMatch(/robots\.txt/);
+  });
+});
+
+describe('instant-profit filter', () => {
+  it('accepts minInstantProfit and minInstantRoi as query params', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/app/api/opportunities/route.ts', 'utf8');
+    expect(src).toMatch(/num\('minInstantProfit'\)/);
+    expect(src).toMatch(/num\('minInstantRoi'\)/);
+  });
+
+  it('filters on instantProfit, not the mode-dependent profit field', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/app/api/opportunities/route.ts', 'utf8');
+    // Must read r.instantProfit so the filter works while viewing Listing mode.
+    expect(src).toMatch(/r\.instantProfit \?\? 0\) >= minInstantProfit/);
+    expect(src).toMatch(/r\.instantRoi \?\? 0\) >= minInstantRoi/);
+  });
+
+  it('offers instant sort options', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/app/api/opportunities/route.ts', 'utf8');
+    expect(src).toMatch(/instantProfit: \(a, b\)/);
+    expect(src).toMatch(/instantRoi: \(a, b\)/);
+  });
+});
+
+describe('sticky filters', () => {
+  it('persists filters to localStorage under a versioned key', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/components/OpportunityTable.tsx', 'utf8');
+    expect(src).toMatch(/FILTERS_STORAGE_KEY\s*=\s*'wfarb\.filters\.v\d+'/);
+    expect(src).toMatch(/useStickyState<Filters>\(FILTERS_STORAGE_KEY, DEFAULTS\)/);
+  });
+
+  it('waits for stored filters before fetching, avoiding a wrong-results flash', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/components/OpportunityTable.tsx', 'utf8');
+    expect(src).toMatch(/if \(!filtersReady\) return;/);
+  });
+
+  it('reads storage in an effect, not during render (hydration safety)', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/lib/useStickyState.ts', 'utf8');
+    const stateInit = src.indexOf('useState<T>(fallback)');
+    const read = src.indexOf('localStorage.getItem');
+    expect(stateInit).toBeGreaterThan(-1);
+    // The initial state must be the fallback; the read happens later, inside useEffect.
+    expect(src.slice(stateInit, read)).toMatch(/useEffect/);
+  });
+
+  it('merges stored values over defaults so new filters are picked up', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/lib/useStickyState.ts', 'utf8');
+    expect(src).toMatch(/\.\.\.fallbackRef\.current/);
+    expect(src).toMatch(/typeof stored === typeof fallbackRef\.current\[k\]/);
+  });
+
+  it('survives storage being unavailable', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/lib/useStickyState.ts', 'utf8');
+    // Both read and write must be guarded; private mode throws on access.
+    expect((src.match(/catch/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('reset clears the stored value, not just the in-memory state', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('src/lib/useStickyState.ts', 'utf8');
+    expect(src).toMatch(/localStorage\.removeItem\(key\)/);
+    const table = fs.readFileSync('src/components/OpportunityTable.tsx', 'utf8');
+    expect(table).toMatch(/onClick=\{resetStoredFilters\}/);
   });
 });

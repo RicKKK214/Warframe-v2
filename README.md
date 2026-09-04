@@ -204,7 +204,8 @@ while it re-scans ~160 sets.
   prices are updated before already-fresh ones.
 - `/api/opportunities` reports `restoredFromCache` and `oldestDataAt` so data age is visible.
 
-This requires a real PostgreSQL database. A file database on an ephemeral host (Render's disk)
+`DATABASE_URL` is **optional**: without it the app still scans and serves live data, it just
+cannot restore after a restart. To get persistence you need a real PostgreSQL database. A file database on an ephemeral host (Render's disk)
 is wiped on every spin-down, which is the exact problem this solves. Use a free
 [Neon](https://neon.tech) database — free forever, no card, no expiry. Render's own free
 Postgres is deleted after 30 days and is not suitable.
@@ -260,6 +261,31 @@ Two gotchas worth knowing:
 
 Because cached data now survives restarts, a cold start is much less painful even without the
 pinger: the site renders immediately from PostgreSQL, then refreshes in the background.
+
+## Filters
+
+### Instant-flip filters
+
+`minInstantProfit` and `minInstantRoi` filter on the **instant flip** numbers (selling straight
+into existing buy orders) and are deliberately independent of the Listing/Instant display
+toggle. That means you can browse listing prices while only seeing sets that would *also* be
+profitable on an immediate dump — useful when you want a guaranteed-speed sale rather than
+waiting for a listing to fill.
+
+Sorting by `instantProfit` / `instantRoi` is available too.
+
+### Filters are remembered
+
+Filter choices persist in `localStorage` (key `wfarb.filters.v1`), so they survive a reload,
+navigating away, or closing the tab entirely — they only change when you change them or press
+**Reset filters**. Notes on the implementation:
+
+- Stored values are **merged over the defaults**, so adding a new filter later doesn't break
+  existing visitors, and a value whose type no longer matches is discarded.
+- The first fetch waits for storage to load, so you never see a flash of unfiltered results.
+- Storage is read in an effect rather than during render, avoiding a hydration mismatch.
+- Because saved filters would otherwise be invisibly in effect, the **Filters** button shows a
+  count badge and the panel says how many are active.
 
 ## Known limitations
 
