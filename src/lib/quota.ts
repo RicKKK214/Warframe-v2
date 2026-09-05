@@ -3,10 +3,12 @@
  * day; PRO (verified subscription) = unlimited.
  *
  * WHAT COUNTS AS ONE SEARCH (the single definition used everywhere):
- *   A request that obtains/analyses ONE specific Prime set's market/order data
- *   — i.e. GET /api/sets/{slug} or POST /api/refresh {slug} — WHEN it cannot be
- *   served from fresh in-memory scanner data (age <= SEARCH_FRESH_MS) and was
- *   not a forced refresh already covered by a charge in this request.
+ *   Opening (or force-refreshing) ONE specific Prime set's detail data —
+ *   i.e. GET /api/sets/{slug} or POST /api/refresh {slug}. Every open counts
+ *   for FREE/guest users, whether or not the data is already cached, EXCEPT a
+ *   re-open of the SAME set by the SAME person within the courtesy window
+ *   (QUOTA_REOPEN_FREE_MS, default 90s) — navigating back and reloading must
+ *   not burn the allowance. Explicit ?refresh=true always counts.
  *
  * WHAT NEVER COUNTS:
  *   - opening the homepage/dashboard or any static page
@@ -14,7 +16,6 @@
  *     results the background scanner already produced)
  *   - GET /api/sets (catalog list) and /api/items/search (name search)
  *   - watchlist, settings, status, health, auth and billing endpoints
- *   - re-opening a set whose analysis is still fresh (< SEARCH_FRESH_MS)
  *
  * ENFORCEMENT:
  *   - Authenticated users: one row per (user, day).
@@ -169,6 +170,40 @@ async function sqlRead(
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Re-open courtesy window. Opening a set detail page costs ONE search; if the
+ * SAME subject re-opens the SAME set within this window (default 90s) it is
+ * free, so navigating back and forth or reloading the page does not burn the
+ * daily allowance. Explicit `?refresh=true` always charges regardless.
+ * Set QUOTA_REOPEN_FREE_MS=0 to charge for every single open.
+ * Best-effort and per-process (not shared across instances).
+ */
+export const QUOTA_REOPEN_FREE_MS = () => {
+  const v = Number(process.env.QUOTA_REOPEN_FREE_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 90_000;
+};
+
+const gRecent = globalThis as unknown as { __wfRecentOpens?: Map<string, number> };
+const recentOpens: Map<string, number> = (gRecent.__wfRecentOpens ??= new Map());
+
+/**
+ * Record an open of `slug` by this subject.
+ * Returns true when the open falls inside the free re-open window (already
+ * paid moments ago) and therefore must NOT be charged again.
+ */
+export function markOpened(s: QuotaSubject, slug: string, now = Date.now()): boolean {
+  const win = QUOTA_REOPEN_FREE_MS();
+  if (win <= 0) return false;
+  const key = `${s.userId ? `user:${s.userId}` : `guest:${s.guestId}`}|${slug}`;
+  if (recentOpens.size > 5000) {
+    for (const [k, t] of recentOpens) if (now - t > win) recentOpens.delete(k);
+  }
+  const last = recentOpens.get(key);
+  if (last !== undefined && now - last <= win) return true; // still inside the window → free
+  recentOpens.set(key, now);
+  return false;
+}
 
 /** Resolve who is asking (user / guest cookie / ip) and mint the guest cookie if needed. */
 export function quotaSubject(req: Request, userId: string | null): { subject: QuotaSubject; setGuestCookie: string | null } {

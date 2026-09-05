@@ -67,6 +67,11 @@ boot by the existing `prisma db push` in `scripts/start-render.sh`:
   `user:<id>` / `guest:<cookie id>` / `ip:<hmac-hashed ip>`. Indexed on day.
 - `WebhookEvent` — PK is the Stripe event id → idempotent webhook handling.
 
+**Admin** (`/admin`): the FIRST registered account ("founder") and any email in
+`ADMIN_EMAILS` can view every account (email handle, email, plan, verification,
+daily search usage, last activity). No names/profiles are collected — email is
+the identity. Access is derived server-side from the session on every render.
+
 Constraints/indexes are declared in `prisma/schema.prisma`. No plaintext
 passwords, no raw IPs (only HMAC-hashed scope ids), no card data (Stripe only).
 
@@ -74,9 +79,11 @@ passwords, no raw IPs (only HMAC-hashed scope ids), no card data (Stripe only).
 
 **What counts as exactly ONE set search** (defined once, in `src/lib/quota.ts`):
 
-- `GET /api/sets/{slug}` — WHEN it cannot be served from fresh in-memory data
-  (analysis older than 90 s, matching the order-cache TTL) or when `?refresh=true`.
-- `POST /api/refresh { slug }` — a targeted force-refresh of one set.
+- Opening a set's detail data — `GET /api/sets/{slug}` **or** `POST /api/refresh {slug}`.
+  Every open counts for FREE/guest users (clicking an item IS the search), with one
+  courtesy: re-opening the SAME set within `QUOTA_REOPEN_FREE_MS` (default 90 s) is
+  free, so reloading the page or navigating back doesn't burn the allowance.
+  Explicit `?refresh=true` always counts. PRO never charges.
 
 **What never counts**: opening the homepage/dashboard or any page,
 `/api/opportunities` (all sorting/filtering/searching of the shared dashboard
@@ -168,7 +175,8 @@ See `.env.example` (authoritative). Summary:
 |---|---|---|
 | `DATABASE_URL` | server | REQUIRED for accounts/PRO/quota (Neon Postgres). |
 | `AUTH_SECRET` | server | REQUIRED in prod (`openssl rand -base64 32`). |
-| `FREE_SEARCH_LIMIT`, `QUOTA_TIMEZONE` | server | Quota tuning (default 5, UTC). |
+| `FREE_SEARCH_LIMIT`, `QUOTA_TIMEZONE`, `QUOTA_REOPEN_FREE_MS` | server | Quota tuning (default 5, UTC, 90 s re-open window). |
+| `ADMIN_EMAILS` | server | Extra emails granted `/admin` (first registered account is always admin). |
 | `SMTP_URL`, `MAIL_FROM` | server | Optional; enables reset/verification email. |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | server | Payments; without them checkout returns an honest 503 and everything else works. |
 | `APP_URL` | server | Optional absolute URL (checkout redirects, email links). |

@@ -39,3 +39,21 @@ body {
   .th { @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400; }
   .td { @apply px-3 py-2 text-sm text-slate-200; }
 }
+
+/* ---------------------------------------------------------------------------
+ * Free-tier dashboard tint (guests + FREE accounts see everything in blue —
+ * the "locked" look; PRO sees the full profit/loss colour set). Purely
+ * cosmetic: the server-side quota/PRO checks are unaffected.
+ * ------------------------------------------------------------------------- */
+.free-tint .text-profit { color: #7dd3fc; }
+.free-tint .text-loss { color: #7dd3fc; }
+.free-tint .text-accent2 { color: #7dd3fc; }
+.free-tint tbody tr { background-color: rgba(56, 189, 248, 0.05); }
+.free-tint tbody tr:hover { background-color: rgba(56, 189, 248, 0.11); }
+.free-tint tbody a { color: #bae6fd; }
+.free-tint tbody a:hover { color: #e0f2fe; }
+.free-tint .border-profit\/40,
+.free-tint .border-loss\/40 { border-color: rgba(125, 211, 252, 0.35); }
+.free-tint .bg-profit\/10,
+.free-tint .bg-loss\/5,
+.free-tint .bg-loss\/10 { background-color: rgba(56, 189, 248, 0.10); }

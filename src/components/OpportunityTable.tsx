@@ -5,6 +5,8 @@ import { useStickyState } from '@/lib/useStickyState';
 import { ArrowUpDown, Search, SlidersHorizontal, Zap, Tag, Save } from 'lucide-react';
 import { Money, Roi, ConfidenceBadge, StrategyTag, Spinner, EmptyState, ErrorState, Disclaimer } from './ui';
 import { ago, CATEGORY_LABEL, plat } from '@/lib/utils';
+import { useAuth } from '@/components/AuthProvider';
+import { cn } from '@/lib/utils';
 
 export interface Row {
   rank: number; slug: string; name: string; category: string; strategy: string;
@@ -39,6 +41,8 @@ const FILTERS_STORAGE_KEY = 'wfarb.filters.v2';
 export function OpportunityTable({ compact = false, title = 'Top Arbitrage Opportunities' }: {
   compact?: boolean; title?: string;
 }) {
+  const { me } = useAuth();
+  const isPro = !!me?.isPro;
   // Persisted: a user's filters stay put across reloads and closing the tab, and only
   // change when they change them.
   const [filters, setFilters, { ready: filtersReady, reset: resetStoredFilters }] =
@@ -241,6 +245,12 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
         </div>
       ) : null}
 
+      {!isPro ? (
+        <div className="rounded-lg border border-sky-400/30 bg-sky-400/5 px-4 py-2 text-xs text-sky-300">
+          Free plan: browsing and searching this board is unlimited — <span className="font-semibold">opening an item costs 1 of your 5 daily searches</span> (PRO unlocks unlimited opens and full colours).
+        </div>
+      ) : null}
+
       {loading && !rows.length ? (
         <div className="card p-8"><Spinner label="Fetching live Warframe.market orders (rate-limited)…" /></div>
       ) : error ? (
@@ -252,7 +262,7 @@ export function OpportunityTable({ compact = false, title = 'Top Arbitrage Oppor
             ? 'The scanner is re-fetching live order books after a restart. Results appear within a few seconds.'
             : 'Try lowering the minimum profit/ROI, switching to Listing flip mode, or hitting Refresh to scan more sets.'} />
       ) : (
-        <div className="card overflow-x-auto">
+        <div className={cn('card overflow-x-auto', !isPro && 'free-tint')}>
           <table className="w-full min-w-[1150px] border-collapse">
             <thead className="border-b border-edge bg-panel2/60">
               <tr>

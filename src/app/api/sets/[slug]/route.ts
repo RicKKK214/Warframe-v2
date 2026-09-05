@@ -6,7 +6,7 @@ import { getSettings } from '@/lib/services/settings';
 import { prisma, withDb } from '@/lib/db';
 import { itemCatalog } from '@/lib/services/ItemCatalogService';
 import { resolveRequestContext, usagePayload } from '@/lib/requestContext';
-import { chargeSearch, refundSearch, getUsage, SEARCH_FRESH_MS, type QuotaUsage } from '@/lib/quota';
+import { chargeSearch, refundSearch, getUsage, markOpened, SEARCH_FRESH_MS, type QuotaUsage } from '@/lib/quota';
 import { jsonError, rateLimit, clientIp } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
@@ -27,14 +27,14 @@ function quotaField(isPro: boolean, usage: QuotaUsage) {
  * GET /api/sets/{slug} — full analysis for ONE Prime set.
  *
  * QUOTA POLICY (what counts as one "set search" — see src/lib/quota.ts):
- *   - If the request can be served from FRESH in-memory scanner data
- *     (analysis age <= SEARCH_FRESH_MS and no ?refresh=true), it is FREE —
- *     re-opening a just-loaded opportunity never burns a search.
- *   - Otherwise it is ONE set search for FREE/guest users (PRO is unlimited):
- *     the quota is reserved atomically BEFORE the upstream work, and refunded
- *     if the analysis ultimately fails (failed searches are not counted).
- *   - ?refresh=true always forces fresh upstream data and therefore always
- *     counts as a search for non-PRO callers.
+ *   - EVERY open of a set detail page counts as ONE set search for FREE/guest
+ *     users (PRO is unlimited) — clicking an item is the search. The only
+ *     exception is a re-open of the SAME set within the courtesy window
+ *     (QUOTA_REOPEN_FREE_MS, default 90s), so reloading or navigating back
+ *     does not burn the allowance.
+ *   - The quota is reserved atomically BEFORE the work and refunded if the
+ *     analysis ultimately fails (failed searches are not counted).
+ *   - ?refresh=true forces fresh upstream data and always counts as a search.
  *
  * Everything else in this route (catalog validation, analysis, order panels,
  * history, watchlist flag) is unchanged from the original scanner.
@@ -69,38 +69,37 @@ export async function GET(req: Request, { params }: { params: { slug: string } }
     // Who is asking, are they PRO, what is their free-tier usage?
     const ctx = await resolveRequestContext(req);
 
-    // Serve fresh cached analysis for free (no upstream work, no quota).
+    // Is this open covered by the re-open courtesy window? (PRO skips all charging.)
+    const freeReopen = !force && markOpened(ctx.subject, slug);
+    // Fresh cached analysis only avoids the UPSTREAM work — it is still a
+    // chargeable open ("click = one search").
     const cached = scanner.results.get(slug);
-    const fresh = !force && cached && Date.now() - cached.updatedAt <= SEARCH_FRESH_MS;
+    const fresh = cached && Date.now() - cached.updatedAt <= SEARCH_FRESH_MS;
     let usage = ctx.usage;
 
-    if (!fresh) {
-      let charged = false;
-      if (!ctx.isPro) {
-        const charge = await chargeSearch(ctx.subject);
-        usage = charge.usage;
-        if (!charge.allowed) {
-          return jsonError(
-            402,
-            'QUOTA_EXCEEDED',
-            `You've used all ${charge.usage.limit} free set searches for today. PRO unlocks unlimited searches.`,
-            {
-              authenticated: !!ctx.user,
-              isPro: false,
-              email: ctx.user?.email ?? null,
-              quota: quotaField(false, { ...charge.usage, remaining: 0 }),
-              upgradeUrl: '/account?upgrade=pro',
-            },
-            ctx.setGuestCookie ? { 'Set-Cookie': ctx.setGuestCookie } : {},
-          );
-        }
-        charged = true;
+    if (!ctx.isPro && !freeReopen) {
+      const charge = await chargeSearch(ctx.subject);
+      usage = charge.usage;
+      if (!charge.allowed) {
+        return jsonError(
+          402,
+          'QUOTA_EXCEEDED',
+          `You've used all ${charge.usage.limit} free set searches for today. PRO unlocks unlimited searches.`,
+          {
+            authenticated: !!ctx.user,
+            isPro: false,
+            email: ctx.user?.email ?? null,
+            quota: quotaField(false, { ...charge.usage, remaining: 0 }),
+            upgradeUrl: '/account?upgrade=pro',
+          },
+          ctx.setGuestCookie ? { 'Set-Cookie': ctx.setGuestCookie } : {},
+        );
       }
 
       const analysis = await scanner.analyseOne(slug, force).catch(() => null);
       if (!analysis) {
         // Failed searches are not counted.
-        if (charged) await refundSearch(ctx.subject);
+        await refundSearch(ctx.subject);
         return NextResponse.json(
           { ok: false, error: `No tradable set composition found for "${slug}".` },
           { status: 404 },

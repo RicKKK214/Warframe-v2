@@ -77,52 +77,85 @@ for (const set of SETS) {
   }
 }
 
-// Deterministic per-slug base price. Warframes 80–420p, weapons 60–260p.
-function basePrice(slug, nParts) {
-  const isFrame = !slug.includes('set') || WARFRAMES.some((w) => slug.startsWith(w + '_'));
-  const h = Math.abs(hash(slug));
-  const lo = isFrame ? 90 : 60;
-  const hi = isFrame ? 420 : 260;
-  return lo + (h % (hi - lo)) - nParts * 2;
-}
+// Deterministic per-set economics. Real markets NEVER have a buy order above
+// a sell ask on the same item — profit only emerges from SET vs PARTS price
+// mismatches, and stays in a believable range (single/double-digit to ~80p).
 function hash(s) {
   let h = 0;
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0;
   return h;
 }
 
+const idToSlug = new Map(catalog.map((i) => [i.id, i.slug]));
+// Explicit part→set mapping (string surgery breaks on two-word parts like
+// 'heavy_blade' → 'gram_prime_heavy_set' phantom slugs).
+const partToSet = new Map();
+for (const set of SETS) {
+  for (const p of set.parts) {
+    partToSet.set(`${set.slug.replace('_set', '')}_${p}`, set.slug);
+  }
+}
+
+function econ(slug) {
+  const setSlug = slug.endsWith('_set') ? slug : (partToSet.get(slug) ?? slug);
+  const root = itemDetail.get(setSlug);
+  const h = Math.abs(hash(setSlug));
+  const setBase = 60 + (h % 340);                       // 60..399p per set
+  const ratio = 0.70 + ((h >> 4) % 41) / 100;           // sum-of-parts 70%..110% of set
+  let units = 0;
+  if (root?.setParts) {
+    for (const id of root.setParts.slice(1)) {
+      units += itemDetail.get(idToSlug.get(id))?.quantityInSet ?? 1;
+    }
+  }
+  if (!units) units = 4;
+  return { setBase, ratio, units };
+}
+
 function ordersFor(slug) {
+  // Deterministic PER SLUG: every call returns the exact same order book, and
+  // parts of one set stay mutually consistent (shared econ(setSlug)).
+  const rnd = mulberry32((Math.abs(hash(slug)) ^ 0x9e3779b9) >>> 0);
   const isSet = slug.endsWith('_set');
-  const root = itemDetail.get(slug);
-  const nParts = root?.setParts?.length ?? 3;
-  const base = Math.max(25, basePrice(slug, nParts));
-  const partFactor = isSet ? 1 : 1 / Math.max(1, nParts - 0.4);
+  const { setBase, ratio, units } = econ(slug);
+  const unitAsk = Math.max(3, Math.round((setBase * ratio) / units)); // avg part ask
   const mk = (type, plat, qty, status, name) => ({
     id: `o_${slug}_${type}_${plat}_${name}`, type, platinum: plat, quantity: qty,
     visible: true,
     user: { id: `u_${name}`, ingameName: name, status, reputation: 50 + Math.floor(rnd() * 400), lastSeen: new Date().toISOString() },
   });
   const orders = [];
+
+  // SELL side (asks, cheapest first).
+  const firstAsk = isSet
+    ? Math.round(setBase * (0.95 + rnd() * 0.05))
+    : Math.round(unitAsk * (0.92 + rnd() * 0.08));
   const sellers = [
     ['AlphaOne', 'ingame'], ['BravoTrader', 'online'], ['CharliePlat', 'ingame'],
     ['DeltaSeller', 'online'], ['EchoVault', 'ingame'], ['FoxOffline', 'offline'],
     ['GammaDeal', 'ingame'], ['HotelCheap', 'online'],
   ];
-  let price = Math.max(2, Math.round(base * partFactor));
+  let ask = firstAsk;
   for (const [name, status] of sellers) {
-    orders.push(mk('sell', price, 1 + Math.floor(rnd() * 3), status, name));
-    price += Math.max(1, Math.round(price * 0.07));
+    orders.push(mk('sell', ask, 1 + Math.floor(rnd() * 3), status, name));
+    ask += Math.max(1, Math.round(ask * 0.07));
   }
+
+  // BUY side (bids, highest first) — ALWAYS at least 2p under the cheapest
+  // ask of the same item, so no free instant money exists on one item.
+  const bidTop = Math.min(
+    firstAsk - 2,
+    Math.round(firstAsk * (isSet ? 0.72 + rnd() * 0.21 : 0.65 + rnd() * 0.25)),
+  );
   const buyers = [
     ['BuyBot01', 'ingame'], ['QuickFlip', 'online'], ['PlatHunter', 'ingame'],
     ['SetCollector', 'online'], ['DeepPockets', 'ingame'], ['AFKbuyer', 'offline'],
     ['MarginMax', 'ingame'], ['SnipeLord', 'online'],
   ];
-  // Buyers bid close to (sometimes above) the cheapest sell → real spreads.
-  price = Math.max(1, Math.round(base * partFactor * (0.86 + rnd() * 0.28)));
+  let bid = Math.max(1, bidTop);
   for (const [name, status] of buyers) {
-    orders.push(mk('buy', price, 1 + Math.floor(rnd() * 4), status, name));
-    price -= Math.max(1, Math.round(price * 0.05));
+    orders.push(mk('buy', bid, 1 + Math.floor(rnd() * 4), status, name));
+    bid -= Math.max(1, Math.round(bid * 0.05));
   }
   return orders;
 }

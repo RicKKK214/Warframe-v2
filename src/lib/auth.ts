@@ -337,3 +337,40 @@ export function validatePassword(password: unknown): string | null {
   if (typeof password !== 'string' || password.length < 8 || password.length > 200) return null;
   return password;
 }
+
+// ---------------------------------------------------------------------------
+// Admin access
+// ---------------------------------------------------------------------------
+
+/**
+ * Admin = email listed in ADMIN_EMAILS (comma-separated env) OR the FIRST
+ * registered user ("founder" — on a fresh deployment that is the owner who
+ * signed up first). Deliberately no client-settable flag anywhere.
+ */
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const list = (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
+
+const gFounder = globalThis as unknown as { __wfFounderId?: string; __wfFounderAt?: number };
+
+export async function isAdminUser(user: { id: string; email: string } | null): Promise<boolean> {
+  if (!user) return false;
+  if (isAdminEmail(user.email)) return true;
+  try {
+    const now = Date.now();
+    if (gFounder.__wfFounderId && now - (gFounder.__wfFounderAt ?? 0) < 60_000) {
+      return user.id === gFounder.__wfFounderId;
+    }
+    const founder = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+    gFounder.__wfFounderId = founder?.id;
+    gFounder.__wfFounderAt = now;
+    return user.id === founder?.id;
+  } catch {
+    return false;
+  }
+}

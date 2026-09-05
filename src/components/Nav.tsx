@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, GitCompareArrows, Radar, Star, Settings2, RefreshCw, Gem, Calculator, User as UserIcon, Crown } from 'lucide-react';
+import { LayoutDashboard, GitCompareArrows, Radar, Star, Settings2, RefreshCw, Gem, Calculator, User as UserIcon, Crown, ShieldCheck } from 'lucide-react';
 import { cn, ago } from '@/lib/utils';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -125,13 +125,24 @@ export function Nav() {
           ) : null}
 
           {me?.authenticated ? (
-            <Link href="/account"
-              className={cn('flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition',
-                pathname.startsWith('/account') ? 'bg-accent/15 text-accent2' : 'text-slate-400 hover:bg-panel2 hover:text-slate-200')}>
-              <UserIcon size={15} />
-              <span className="hidden max-w-[140px] truncate sm:inline">{me.email}</span>
-              {isPro ? <Crown size={13} className="text-accent2" /> : null}
-            </Link>
+            <div className="flex items-center gap-1.5">
+              {me.isAdmin ? (
+                <Link href="/admin"
+                  className={cn('flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition',
+                    pathname.startsWith('/admin') ? 'bg-accent/15 text-accent2' : 'text-slate-400 hover:bg-panel2 hover:text-slate-200')}
+                  title="Admin — accounts">
+                  <ShieldCheck size={15} />
+                  <span className="hidden sm:inline">Admin</span>
+                </Link>
+              ) : null}
+              <Link href="/account"
+                className={cn('flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition',
+                  pathname.startsWith('/account') ? 'bg-accent/15 text-accent2' : 'text-slate-400 hover:bg-panel2 hover:text-slate-200')}>
+                <UserIcon size={15} />
+                <span className="hidden max-w-[140px] truncate sm:inline">{me.email}</span>
+                {isPro ? <Crown size={13} className="text-accent2" /> : null}
+              </Link>
+            </div>
           ) : (
             <div className="flex items-center gap-1.5">
               <Link href="/login" className="btn px-2.5 py-1.5 text-xs">Log in</Link>

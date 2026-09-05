@@ -27,6 +27,16 @@ export default function LoginPage() {
         setError(j.error ?? 'Login failed.');
         return;
       }
+      // Verify the session cookie actually stuck (embedded previews can block
+      // it — tell the user exactly what to do instead of a silent logout).
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+      const meJ = await meRes.json().catch(() => null);
+      if (meJ && !meJ.authenticated) {
+        setError(
+          'Your browser blocked the login cookie in this embedded preview. Tap "Allow cookies for the preview" at the bottom of the page (or "Open in a new tab") and log in again.',
+        );
+        return;
+      }
       await refresh();
       router.push('/account');
     } catch {

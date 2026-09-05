@@ -1,6 +1,6 @@
 import { resolveRequestContext, usagePayload } from '@/lib/requestContext';
 import { getSubscription } from '@/lib/billing';
-import { cleanupExpiredAuth } from '@/lib/auth';
+import { cleanupExpiredAuth, isAdminUser } from '@/lib/auth';
 import { sweepOldQuota } from '@/lib/quota';
 import { jsonOk } from '@/lib/http';
 
@@ -28,9 +28,11 @@ export async function GET(req: Request) {
   }
 
   const sub = ctx.user ? await getSubscription(ctx.user.id) : null;
+  const isAdmin = await isAdminUser(ctx.user);
   const base = usagePayload(ctx);
   return jsonOk({
     ...base,
+    isAdmin,
     user: ctx.user
       ? {
           id: ctx.user.id,

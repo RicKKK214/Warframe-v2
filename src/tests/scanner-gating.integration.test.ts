@@ -35,10 +35,10 @@ const fakeAnalysis = {
 vi.mock('@/lib/services/ItemCatalogService', () => ({
   itemCatalog: {
     bySlug: async (slug: string) =>
-      slug === 'x_prime_set'
-        ? { id: 'i1', slug, name: 'X Prime Set', tags: ['prime', 'set'], thumb: null, category: 'warframe', isPrimeSet: true }
-        : slug === 'not_a_set'
-          ? { id: 'i2', slug, name: 'Plain Item', tags: [], thumb: null, category: 'other', isPrimeSet: false }
+      slug === 'not_a_set'
+        ? { id: 'i2', slug, name: 'Plain Item', tags: [], thumb: null, category: 'other', isPrimeSet: false }
+        : /_set$/.test(slug)
+          ? { id: `i_${slug}`, slug, name: `X Prime Set (${slug})`, tags: ['prime', 'set'], thumb: null, category: 'warframe', isPrimeSet: true }
           : undefined,
     getPrimeSets: async () => [{ id: 'i1', slug: 'x_prime_set', name: 'X Prime Set', tags: ['prime', 'set'], thumb: null, category: 'warframe', isPrimeSet: true }],
   },
@@ -134,6 +134,8 @@ async function makeUser(email: string, sub?: { status: string; periodEnd?: Date 
 
 beforeAll(async () => {
   await freshTables();
+  // Per-open charging without the re-open courtesy window (tested separately).
+  process.env.QUOTA_REOPEN_FREE_MS = '0';
 });
 
 beforeEach(() => {
@@ -179,17 +181,54 @@ describe('GET /api/sets/[slug] — search quota', () => {
     expect(analyseOneMock.mock.calls.length).toBe(callsBefore);
   });
 
-  it('does NOT charge when serving fresh already-loaded data', async () => {
+  it('CHARGES even when serving fresh already-loaded data (an open IS a search)', async () => {
     const { GET } = await import('@/app/api/sets/[slug]/route');
     // New guest with unused quota.
     const guestCookie = `wf_guest=${signValue('g_fresh_window')}`;
     const res0 = setReq('x_prime_set', { cookie: guestCookie, ip: '192.0.2.60' });
-    // Someone else (the background scanner) just analysed this set.
+    // Someone else (the background scanner) just analysed this set — under the
+    // click-to-charge policy the open still counts.
     scannerState.results.set('x_prime_set', { ...fakeAnalysis, updatedAt: Date.now() - 1000 });
     const res = await GET(res0, { params: { slug: 'x_prime_set' } });
     expect(res.status).toBe(200);
     const j = await res.json();
-    expect(j.quota.used).toBe(0); // free — data was already loaded and fresh
+    expect(j.quota.used).toBe(1); // opening the item is the search
+  });
+
+  it('re-open of the SAME set inside the courtesy window is free; other sets still charge', async () => {
+    const { GET } = await import('@/app/api/sets/[slug]/route');
+    process.env.QUOTA_REOPEN_FREE_MS = '60000';
+    try {
+      const guestCookie = `wf_guest=${signValue('g_reopen_window')}`;
+      const open = (slug: string) => GET(setReq(slug, { cookie: guestCookie, ip: '192.0.2.61' }), { params: { slug } });
+      const r1 = await (await open('x_prime_set')).json();       // first open → 1
+      expect(r1.quota.used).toBe(1);
+      const r2 = await (await open('x_prime_set')).json();       // re-open inside window → still 1
+      expect(r2.quota.used).toBe(1);
+      const r3 = await (await open('y_prime_set')).json();       // different set → 2
+      expect(r3.quota.used).toBe(2);
+      const r4 = await (await open('x_prime_set')).json();       // x again, still inside window → 2
+      expect(r4.quota.used).toBe(2);
+    } finally {
+      process.env.QUOTA_REOPEN_FREE_MS = '0';
+    }
+  });
+
+  it('?refresh=true charges even inside the courtesy window', async () => {
+    const { GET } = await import('@/app/api/sets/[slug]/route');
+    process.env.QUOTA_REOPEN_FREE_MS = '60000';
+    try {
+      const guestCookie = `wf_guest=${signValue('g_refresh_forces')}`;
+      const open = (slug: string, refresh = false) =>
+        GET(setReq(slug, { cookie: guestCookie, ip: '192.0.2.62', refresh }), { params: { slug } });
+      await open('x_prime_set');
+      const r2 = await (await open('x_prime_set')).json();       // free re-open
+      expect(r2.quota.used).toBe(1);
+      const r3 = await (await open('x_prime_set', true)).json(); // forced refresh always charges
+      expect(r3.quota.used).toBe(2);
+    } finally {
+      process.env.QUOTA_REOPEN_FREE_MS = '0';
+    }
   });
 
   it('does NOT charge for invalid slugs (404 without quota)', async () => {

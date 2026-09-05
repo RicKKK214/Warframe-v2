@@ -32,6 +32,16 @@ export default function SignupPage() {
         setError(j.error ?? 'Signup failed.');
         return;
       }
+      // Verify the session cookie actually stuck (embedded previews can block
+      // it — tell the user exactly what to do instead of a silent logout).
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+      const meJ = await meRes.json().catch(() => null);
+      if (meJ && !meJ.authenticated) {
+        setError(
+          'Account created, but your browser blocked the login cookie in this embedded preview. Tap "Allow cookies for the preview" at the bottom of the page (or "Open in a new tab"), then log in.',
+        );
+        return;
+      }
       await refresh();
       // New accounts are FREE — never imply signup alone grants unlimited.
       router.push('/account?welcome=1');
