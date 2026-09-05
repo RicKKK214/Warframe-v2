@@ -53,6 +53,10 @@ export async function setup() {
     return;
   }
   g.__wfTestSetupDone = true;
+  // Offline-tolerant engine verification: in sandboxes/CI without access to
+  // binaries.prisma.sh, skip missing engine checksums when the engines are
+  // already installed locally (harmless no-op where checksums ARE available).
+  process.env.PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING ??= '1';
   if (!(await portOpen(PORT, HOST))) {
     await bootEmbeddedPostgres();
   }

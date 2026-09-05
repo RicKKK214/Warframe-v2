@@ -44,6 +44,54 @@ describe('sameOrigin (CSRF guard)', () => {
   it('rejects malformed origin values', () => {
     expect(sameOrigin(new Request(BASE, { headers: { Origin: 'not a url' } }))).toBe(false);
   });
+  it('accepts an ALLOWED_HOSTS entry (proxied preview domain)', () => {
+    const prev = process.env.ALLOWED_HOSTS;
+    process.env.ALLOWED_HOSTS = '3000-sandbox.e2b.app';
+    try {
+      expect(sameOrigin(new Request('http://127.0.0.1:3000/api/x', {
+        method: 'POST',
+        headers: { Origin: 'https://3000-sandbox.e2b.app' },
+      }))).toBe(true);
+      // Still rejects everything else.
+      expect(sameOrigin(new Request('http://127.0.0.1:3000/api/x', {
+        method: 'POST',
+        headers: { Origin: 'https://evil.example' },
+      }))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.ALLOWED_HOSTS;
+      else process.env.ALLOWED_HOSTS = prev;
+    }
+  });
+  it('accepts a wildcard ALLOWED_HOSTS entry', () => {
+    const prev = process.env.ALLOWED_HOSTS;
+    process.env.ALLOWED_HOSTS = '*.e2b.app';
+    try {
+      expect(sameOrigin(new Request('http://10.0.0.5:3000/api/x', {
+        method: 'POST',
+        headers: { Origin: 'https://3000-any.e2b.app' },
+      }))).toBe(true);
+      expect(sameOrigin(new Request('http://10.0.0.5:3000/api/x', {
+        method: 'POST',
+        headers: { Origin: 'https://e2b.app.evil.example' },
+      }))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.ALLOWED_HOSTS;
+      else process.env.ALLOWED_HOSTS = prev;
+    }
+  });
+  it('accepts the APP_URL host', () => {
+    const prev = process.env.APP_URL;
+    process.env.APP_URL = 'https://wf-arb.onrender.com';
+    try {
+      expect(sameOrigin(new Request('http://127.0.0.1:3000/api/x', {
+        method: 'POST',
+        headers: { Origin: 'https://wf-arb.onrender.com' },
+      }))).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.APP_URL;
+      else process.env.APP_URL = prev;
+    }
+  });
 });
 
 describe('clientIp', () => {

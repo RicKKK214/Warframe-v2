@@ -86,20 +86,56 @@ export function clientIp(req: Request): string {
 export function sameOrigin(req: Request): boolean {
   const origin = req.headers.get('origin');
   if (!origin) return false;
-  let host = req.headers.get('x-forwarded-host');
-  if (host) host = host.split(',')[0].trim();
-  if (!host) {
-    try {
-      host = new URL(req.url).host;
-    } catch {
-      return false;
-    }
-  }
+  let originHost: string;
   try {
-    return new URL(origin).host === host;
+    originHost = new URL(origin).host;
   } catch {
     return false;
   }
+  // Every host identifier the request may carry. Proxies differ in what they
+  // preserve (Host rewrite vs x-forwarded-host), so all of them are accepted.
+  const hosts = new Set<string>();
+  const add = (h: string | null | undefined) => {
+    if (!h) return;
+    for (const part of h.split(',')) {
+      const host = part.trim().toLowerCase();
+      if (host) hosts.add(host);
+    }
+  };
+  add(req.headers.get('x-forwarded-host'));
+  add(req.headers.get('host'));
+  try {
+    add(new URL(req.url).host);
+  } catch {
+    /* ignore */
+  }
+  // Explicit deploy-time allowlist (e.g. a preview/proxy domain the app is
+  // reachable under but that is not present in forwarded headers).
+  // Comma-separated; supports a single leading "*." wildcard per entry.
+  const configured = (process.env.ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  for (const c of configured) {
+    if (c.startsWith('*.')) {
+      const suffix = c.slice(1); // ".example.com"
+      for (const h of hosts) {
+        if (h.endsWith(suffix)) hosts.add(h);
+      }
+      if (originHost.endsWith(suffix)) hosts.add(originHost);
+    } else {
+      hosts.add(c);
+    }
+  }
+  // Canonical APP_URL origin is also always trusted.
+  if (process.env.APP_URL) {
+    try {
+      add(new URL(process.env.APP_URL).host);
+    } catch {
+      /* ignore malformed APP_URL */
+    }
+  }
+  return hosts.has(originHost.toLowerCase());
 }
 
 // ---------------------------------------------------------------------------
