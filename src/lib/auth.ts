@@ -144,11 +144,27 @@ export function readGuestId(req: Request): string | null {
   return verifySigned(parseCookies(req)[GUEST_COOKIE]);
 }
 
+/**
+ * Cookie attributes shared by session + guest cookies.
+ *
+ * Over HTTPS the cookies are `SameSite=None; Secure; Partitioned` (CHIPS):
+ * None+Secure so they survive cross-site embedding (sandboxed previews render
+ * the app in an iframe, where Lax cookies are refused), Partitioned so
+ * third-party-cookie-blocking browsers still store them. Cross-site request
+ * forgery stays blocked by the sameOrigin() Origin check enforced on every
+ * state-changing route (required when using SameSite=None).
+ * Over plain HTTP (local dev, no embedding) the friendlier Lax is used.
+ */
+function cookieAttrs(secure: boolean) {
+  return secure
+    ? { sameSite: 'None' as const, secure: true, partitioned: true }
+    : { sameSite: 'Lax' as const, secure: false, partitioned: false };
+}
+
 export function guestCookieHeader(id: string, secure: boolean): string {
   return serializeCookie(GUEST_COOKIE, signValue(id), {
     maxAge: GUEST_TTL_MS / 1000,
-    sameSite: 'Lax',
-    secure,
+    ...cookieAttrs(secure),
   });
 }
 
@@ -191,13 +207,12 @@ export async function createSession(userId: string): Promise<string> {
 export function sessionCookieHeader(token: string, secure: boolean): string {
   return serializeCookie(SESSION_COOKIE, token, {
     maxAge: SESSION_TTL_MS / 1000,
-    sameSite: 'Lax',
-    secure,
+    ...cookieAttrs(secure),
   });
 }
 
 export function clearSessionCookieHeader(secure: boolean): string {
-  return serializeCookie(SESSION_COOKIE, '', { maxAge: 0, sameSite: 'Lax', secure });
+  return serializeCookie(SESSION_COOKIE, '', { maxAge: 0, ...cookieAttrs(secure) });
 }
 
 /** Resolve the session cookie to a live user, or null. Slides lastSeenAt. */

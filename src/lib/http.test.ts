@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseCookies, serializeCookie, sameOrigin, clientIp, rateLimit, randomToken, safeEqual,
+  requestIsSecure,
 } from './http';
 
 const BASE = 'http://localhost:3000';
@@ -20,6 +21,37 @@ describe('cookie parsing/serialization', () => {
     expect(c).toContain('Secure');
     expect(c).toContain('Max-Age=60');
     expect(c).toContain('Path=/');
+  });
+  it('adds Partitioned for CHIPS (embedded/iframe storage)', () => {
+    const c = serializeCookie('wf_session', 'tok', { maxAge: 60, sameSite: 'None', secure: true, partitioned: true });
+    expect(c).toContain('SameSite=None');
+    expect(c).toContain('Secure');
+    expect(c).toContain('Partitioned');
+  });
+});
+
+describe('requestIsSecure', () => {
+  it('lets the browser Origin/Referer scheme override a contradictory x-forwarded-proto', () => {
+    // next-server itself stamps x-forwarded-proto=http on direct connections;
+    // the browser's own Origin (https page behind a TLS proxy) must win.
+    expect(requestIsSecure(new Request('http://127.0.0.1:3000/x', {
+      method: 'POST', headers: { Origin: 'https://3000-sandbox.e2b.app', 'x-forwarded-proto': 'http' },
+    }))).toBe(true);
+    expect(requestIsSecure(new Request('http://127.0.0.1:3000/x', {
+      method: 'POST', headers: { Origin: 'http://localhost:3000', 'x-forwarded-proto': 'https' },
+    }))).toBe(false);
+  });
+  it('falls back to x-forwarded-proto when no Origin/Referer is present', () => {
+    expect(requestIsSecure(new Request('http://127.0.0.1:3000/x', { headers: { 'x-forwarded-proto': 'https' } }))).toBe(true);
+    expect(requestIsSecure(new Request('http://127.0.0.1:3000/x', { headers: { 'x-forwarded-proto': 'http' } }))).toBe(false);
+  });
+  it('infers https from Referer on GETs', () => {
+    expect(requestIsSecure(new Request('http://127.0.0.1:3000/x', {
+      headers: { Referer: 'https://3000-sandbox.e2b.app/account' },
+    }))).toBe(true);
+  });
+  it('defaults to the request URL scheme', () => {
+    expect(requestIsSecure(new Request('http://localhost:3000/x'))).toBe(false);
   });
 });
 

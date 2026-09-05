@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   hashPassword, verifyPassword, signValue, verifySigned, ipScopeId,
   normalizeEmail, validatePassword, hashToken,
+  sessionCookieHeader, guestCookieHeader, clearSessionCookieHeader,
 } from './auth';
 
 describe('password hashing (scrypt)', () => {
@@ -101,5 +102,24 @@ describe('token hashing', () => {
     expect(h).toBe(hashToken(t));
     expect(h).not.toContain('super-secret');
     expect(h).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
+
+describe('cookie attributes (CHIPS-aware)', () => {
+  it('uses SameSite=None; Secure; Partitioned over https so embedded previews keep the session', () => {
+    const c = sessionCookieHeader('tok', true);
+    expect(c).toContain('SameSite=None');
+    expect(c).toContain('Secure');
+    expect(c).toContain('Partitioned');
+    expect(c).toContain('HttpOnly');
+    expect(guestCookieHeader('g_x', true)).toContain('Partitioned');
+    expect(clearSessionCookieHeader(true)).toContain('SameSite=None');
+  });
+  it('uses friendly SameSite=Lax over plain http (local dev)', () => {
+    const c = sessionCookieHeader('tok', false);
+    expect(c).toContain('SameSite=Lax');
+    expect(c).not.toContain('Secure');
+    expect(c).not.toContain('Partitioned');
+    expect(guestCookieHeader('g_x', false)).not.toContain('Partitioned');
   });
 });

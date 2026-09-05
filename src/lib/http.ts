@@ -33,7 +33,7 @@ export interface CookieOptions {
 }
 
 /** Serialize a Set-Cookie header value. `secure` is decided by the caller. */
-export function serializeCookie(name: string, value: string, opts: CookieOptions & { secure?: boolean }): string {
+export function serializeCookie(name: string, value: string, opts: CookieOptions & { secure?: boolean; partitioned?: boolean }): string {
   const parts = [`${name}=${encodeURIComponent(value)}`];
   parts.push(`Path=${opts.path ?? '/'}`);
   if (opts.maxAge !== undefined) parts.push(`Max-Age=${Math.floor(opts.maxAge)}`);
@@ -41,11 +41,20 @@ export function serializeCookie(name: string, value: string, opts: CookieOptions
   if (opts.httpOnly !== false) parts.push('HttpOnly');
   if (opts.sameSite) parts.push(`SameSite=${opts.sameSite}`);
   if (opts.secure) parts.push('Secure');
+  // CHIPS: required for the cookie to be STORED when the app is embedded in a
+  // cross-site iframe (e.g. sandboxed previews). Ignored harmlessly elsewhere.
+  if (opts.partitioned) parts.push('Partitioned');
   return parts.join('; ');
 }
 
 /** True when the request came over HTTPS (Render/e2b terminate TLS upstream). */
 export function requestIsSecure(req: Request): boolean {
+  // The browser's own Origin/Referer states the page's actual scheme and is
+  // the most trustworthy signal (next-server stamps x-forwarded-proto itself
+  // on direct connections, so that header can contradict reality).
+  const originOrRef = req.headers.get('origin') ?? req.headers.get('referer');
+  if (originOrRef?.startsWith('https://')) return true;
+  if (originOrRef?.startsWith('http://')) return false;
   const proto = req.headers.get('x-forwarded-proto');
   if (proto) return proto.split(',')[0].trim() === 'https';
   try {
